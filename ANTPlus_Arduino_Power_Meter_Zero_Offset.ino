@@ -1,9 +1,10 @@
 #include "antdefines.h"
 #include "antmessage.h"
-//ANT+ Constants for power meter channel
 
+
+//ANT+ Constants for power meter channel
 #define CHANNEL_TYPE_SLAVE (0x00)
-#define ANTPLUS_NETWORK_KEY {0xB9, 0xA5, 0x21, 0xFB, 0xBD, 0x72, 0xC3, 0x45}
+#define ANTPLUS_NETWORK_KEY {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} //NOTE: This is a private key that must be obtained from the ANT+ website. It is free to sign up.
 #define DEVICE_TYPE_POWER_METER (11)
 #define DEVICE_NUMBER_WILDCARD (0x00)
 #define SENSOR_CHANNEL_FREQ (57)
@@ -14,16 +15,18 @@
 
 #include <SoftwareSerial.h>
 
-#define TX_PIN 8
-#define RX_PIN 9
-
-SoftwareSerial ANT_serial(TX_PIN, RX_PIN); // RX, TX pins on arduino
-
-
+//Pins cnnections from NRF24AP2 to Arduino Pro Mini
+#define TX_PIN (8) 
+#define RX_PIN (9)
 #define SUSPEND_PIN (3)
 #define SLEEP_PIN (4)
 #define RESET_PIN (5)
 #define RTS_PIN (2)
+
+
+
+SoftwareSerial ANT_serial(TX_PIN, RX_PIN); // RX, TX pins on arduino
+
 
 typedef struct ANT_packet {
   byte sync;
@@ -43,7 +46,6 @@ typedef struct ANT_channel {
   int deviceNumber;
   int channelPeriod;
   int timeout;
-
 } ANT_channel;
 
 ANT_channel powerChannel =
@@ -62,8 +64,8 @@ ANT_channel powerChannel =
 
 //Global data variables
 int instPwr = 0; //instantaneous power
-volatile int RTS_asserted = 0;
 
+//Computes checksum for ANT+ Messsage. Bitwise XOR with all bytes (including SYNC)
 byte checksum(byte* data, int size) {
   byte chksum = 0;
   for (int i = 0; i < size; i++) {
@@ -82,17 +84,14 @@ void ANT_send(byte* data, int size) {
   }
 }
 
+//prints array for debugging
 void printArray(byte arr[], int size) {
   for (int i = 0; i < size; i++) {
     Serial.println(arr[i], HEX);
   }
 }
 
-void ISR_RTS() {
-  RTS_asserted = 1;
-}
-
-
+//Sends calibration request. Message structure is as outlined in the ANT+ docs
 void requestCalibration(ANT_channel* channel) {
   Serial.println("Send Calibration Request");
   byte message[13];
@@ -113,11 +112,8 @@ void requestCalibration(ANT_channel* channel) {
 }
 
 
-
-
-
 void ANT_setNetworkKey(ANT_channel* channel) {
-  Serial.println("Set network key ");
+  Serial.println("Setting network key ");
 
   byte message[13];
   message[0] = MESG_TX_SYNC;
@@ -131,7 +127,7 @@ void ANT_setNetworkKey(ANT_channel* channel) {
 
 
 void ANT_setChannelID(ANT_channel* channel) {
-  Serial.println("Set channel id ");
+  Serial.println("Setting channel id ");
   byte message[9];
   message[0] = MESG_TX_SYNC;
   message[1] = 5; //data msg length
@@ -146,7 +142,7 @@ void ANT_setChannelID(ANT_channel* channel) {
 }
 
 void ANT_setChannelPeriod(ANT_channel* channel) {
-  Serial.println("Set channel period ");
+  Serial.println("Setting channel period ");
   byte message[7];
   message[0] = MESG_TX_SYNC;
   message[1] = 3; //data msg length
@@ -159,7 +155,7 @@ void ANT_setChannelPeriod(ANT_channel* channel) {
 }
 
 void ANT_assignChannel(ANT_channel* channel) {
-  Serial.println("assign channel ");
+  Serial.println("Assigning channel ");
   byte message[7];
   message[0] = MESG_TX_SYNC;
   message[1] = 3; //data msg length
@@ -172,7 +168,7 @@ void ANT_assignChannel(ANT_channel* channel) {
 }
 
 void ANT_openChannel(ANT_channel* channel) {
-  Serial.print("Open channel: ");
+  Serial.print("Openning channel ");
   byte message[5];
   message[0] = MESG_TX_SYNC;
   message[1] = 1; //data msg length
@@ -183,7 +179,7 @@ void ANT_openChannel(ANT_channel* channel) {
 }
 
 void ANT_SetChannelRFFreq(ANT_channel* channel) {
-  Serial.println("Set Frequency");
+  Serial.println("Setting Frequency");
   byte message[6];
   message[0] = MESG_TX_SYNC;
   message[1] = 2; //data msg length
@@ -195,7 +191,7 @@ void ANT_SetChannelRFFreq(ANT_channel* channel) {
 }
 
 void ANT_SetChannelSearchTimeout(ANT_channel* channel) {
-  Serial.println("Set channel timeout ");
+  Serial.println("Setting channel timeout ");
   byte message[6];
   message[0] = MESG_TX_SYNC;
   message[1] = 2; //data msg length
@@ -237,6 +233,8 @@ void updateInstPwr(byte* data) {
   //Serial.println(instPwr);
 
 }
+
+//Interprets the calibration response packet
 void updateCalibration(byte* data) {
   int calibData = data[6] | data[7] << 8;
   Serial.print("Zero Offset Value: ");
@@ -260,12 +258,14 @@ void updateCalibration(byte* data) {
   
 }
 
+//Constructs whole packet from incoming bytes on UART. Returns true if full packet is received successfully
 boolean constructPacket(ANT_packet* packet) {
   byte rxbuf[ANT_MAX_SIZE];
   int bufcnt = 0;
   while (ANT_serial.available()) {
     byte byteIn = ANT_serial.read();
-    delay(10);
+    delay(10); //the delay is needed so that we do not read the incoming bytes too quickly, leading ANT_serial.available() to return false in the middle of a packet
+               //TODO encapsulate whole section with while statement (with timeout condition) and use if(ANT_serial.available()) instead.
     //      Serial.print("byte received ");
     //      Serial.print(byteIn, HEX);
     //      Serial.print("    buffer count ");
@@ -278,7 +278,7 @@ boolean constructPacket(ANT_packet* packet) {
         return false;
       }
     } else if (bufcnt == 1) {
-      rxbuf[bufcnt] = byteIn;		//message length
+      rxbuf[bufcnt] = byteIn;		//Message length
       bufcnt++;
     } else if (bufcnt == 2) {
       rxbuf[bufcnt] = byteIn;    //Message ID
@@ -288,7 +288,7 @@ boolean constructPacket(ANT_packet* packet) {
       bufcnt++;
     } else if (bufcnt == (rxbuf[1] + MESG_HEADER_SIZE)) {
       rxbuf[bufcnt] = byteIn;   //checksum
-      if (byteIn == checksum(rxbuf, rxbuf[1] + MESG_HEADER_SIZE)) { //check if checksum is correct
+      if (byteIn == checksum(rxbuf, rxbuf[1] + MESG_HEADER_SIZE)) { //if checksum is correct, packet is received successfully
         memcpy(packet, rxbuf, rxbuf[1] + 4);
         //printArray(rxbuf, rxbuf[1] + 4);
         return true;
@@ -302,6 +302,7 @@ boolean constructPacket(ANT_packet* packet) {
   return false;
 }
 
+//Interprets data based on packet
 void readPacket(ANT_packet* packet) {
   int dataLength = packet->length;
   byte mesgID = packet->mesgID;
@@ -334,29 +335,29 @@ void readPacket(ANT_packet* packet) {
 }
 
 void setup() {
-  ANT_serial.begin(9600);
-  Serial.begin(115200);
+  ANT_serial.begin(9600); //the baud rate for the NRF24AP2 module I am using is 9600
+  Serial.begin(115200); //Needs to be faster than ANT_serial baud rate if you want to debug by printing bytes continuously
 
   pinMode(SUSPEND_PIN, OUTPUT);
   pinMode(SLEEP_PIN,   OUTPUT);
   pinMode(RESET_PIN,   OUTPUT);
   pinMode(RTS_PIN,     INPUT);
 
-  //Per datasheet
+  //As per nrf24ap2 docs for normal operation
   digitalWrite(RESET_PIN,   HIGH);
   digitalWrite(SUSPEND_PIN, HIGH);
   digitalWrite(SLEEP_PIN,   LOW);
 
-  attachInterrupt(digitalPinToInterrupt(2), ISR_RTS, RISING);
   //printChannelParam(&powerChannel);
 
+  //Resets MRF24AP2 Module
   digitalWrite(RESET_PIN, LOW);
   delay(5);
   digitalWrite(RESET_PIN, HIGH);
   delay(1000);
 
   establishChannel(&powerChannel);
-  //    Serial.println("press any key to calibrate power meter");
+  Serial.println("press any key to calibrate power meter");
 
 }
 
@@ -407,7 +408,7 @@ void loop() {
   byte packet[ANT_MAX_SIZE];
   ANT_packet* ant_packet = (ANT_packet*)packet;
   if (constructPacket(ant_packet)) {
-    Serial.println("packet constructed success");
+    //Serial.println("packet constructed success");
     //printPacket(ant_packet);
     readPacket(ant_packet);
   }
