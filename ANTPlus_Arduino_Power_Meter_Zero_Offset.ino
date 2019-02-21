@@ -4,7 +4,14 @@
 
 //ANT+ Constants for power meter channel
 #define CHANNEL_TYPE_SLAVE (0x00)
-#define ANTPLUS_NETWORK_KEY {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} //NOTE: This is a private key that must be obtained from the ANT+ website. It is free to sign up.
+//#define ANTPLUS_NETWORK_KEY {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} //NOTE: This is a private key that must be obtained from the ANT+ website. It is free to sign up.
+
+#ifndef ANTPLUS_NETWORK_KEY 
+#error "Missing Network Key. Obtain from ant+ website"
+#endif
+
+
+
 #define DEVICE_TYPE_POWER_METER (11)
 #define DEVICE_NUMBER_WILDCARD (0x00)
 #define SENSOR_CHANNEL_FREQ (57)
@@ -16,7 +23,7 @@
 #include <SoftwareSerial.h>
 
 //Pins cnnections from NRF24AP2 to Arduino Pro Mini
-#define TX_PIN (8) 
+#define TX_PIN (8)
 #define RX_PIN (9)
 #define SUSPEND_PIN (3)
 #define SLEEP_PIN (4)
@@ -75,12 +82,12 @@ byte checksum(byte* data, int size) {
 }
 
 void ANT_send(byte* data, int size) {
-//  Serial.println("Sending: ");
+  //  Serial.println("Sending: ");
 
   for (int i = 0; i < size; i++) {
     ANT_serial.write(data[i]);
-//    Serial.print(data[i], HEX);
-//    Serial.println();
+    //    Serial.print(data[i], HEX);
+    //    Serial.println();
   }
 }
 
@@ -247,7 +254,7 @@ void updateCalibration(byte* data) {
     Serial.print("Calibration Unsuccessful ");
     Serial.print("Zero Offset Value: ");
     Serial.println(calibData);
-  } else if (data[1] == 0x12){
+  } else if (data[1] == 0x12) {
     //this is a auto zero support packet
   } else {
     Serial.println("Other Calibration Page Received");
@@ -255,49 +262,45 @@ void updateCalibration(byte* data) {
     Serial.println(data[1], HEX);
     printArray(data, MESG_MAX_DATA_BYTES);
   }
-  
+
 }
 
 //Constructs whole packet from incoming bytes on UART. Returns true if full packet is received successfully
 boolean constructPacket(ANT_packet* packet) {
   byte rxbuf[ANT_MAX_SIZE];
   int bufcnt = 0;
-  while (ANT_serial.available()) {
-    byte byteIn = ANT_serial.read();
-    delay(10); //the delay is needed so that we do not read the incoming bytes too quickly, leading ANT_serial.available() to return false in the middle of a packet
-               //TODO encapsulate whole section with while statement (with timeout condition) and use if(ANT_serial.available()) instead.
-    //      Serial.print("byte received ");
-    //      Serial.print(byteIn, HEX);
-    //      Serial.print("    buffer count ");
-    //      Serial.println(bufcnt);
-    if (bufcnt == 0) {
-      if (byteIn == MESG_TX_SYNC) { //first byte - SYNC byte received
-        rxbuf[bufcnt] = byteIn;
+  unsigned long timeout = millis() + 3000; //arbitrary timeout value
+  while (timeout > millis()) {
+    if (ANT_serial.available()) {
+      byte byteIn = ANT_serial.read();
+      if (bufcnt == 0) {
+        if (byteIn == MESG_TX_SYNC) { //first byte - SYNC byte received
+          rxbuf[bufcnt] = byteIn;
+          bufcnt++;
+        } else { //no sync byte
+          return false;
+        }
+      } else if (bufcnt == 1) {
+        rxbuf[bufcnt] = byteIn;    //Message length
         bufcnt++;
-      } else { //no sync byte
-        return false;
+      } else if (bufcnt == 2) {
+        rxbuf[bufcnt] = byteIn;    //Message ID
+        bufcnt++;
+      } else if ((bufcnt < (rxbuf[1] + MESG_HEADER_SIZE))) {
+        rxbuf[bufcnt] = byteIn;    //Data bytes
+        bufcnt++;
+      } else if (bufcnt == (rxbuf[1] + MESG_HEADER_SIZE)) {
+        rxbuf[bufcnt] = byteIn;   //checksum
+        if (byteIn == checksum(rxbuf, rxbuf[1] + MESG_HEADER_SIZE)) { //if checksum is correct, packet is received successfully
+          memcpy(packet, rxbuf, rxbuf[1] + 4);
+          //printArray(rxbuf, rxbuf[1] + 4);
+          return true;
+        } else {
+          return false;
+        }
       }
-    } else if (bufcnt == 1) {
-      rxbuf[bufcnt] = byteIn;		//Message length
-      bufcnt++;
-    } else if (bufcnt == 2) {
-      rxbuf[bufcnt] = byteIn;    //Message ID
-      bufcnt++;
-    } else if ((bufcnt < (rxbuf[1] + MESG_HEADER_SIZE))) {
-      rxbuf[bufcnt] = byteIn;    //Data bytes
-      bufcnt++;
-    } else if (bufcnt == (rxbuf[1] + MESG_HEADER_SIZE)) {
-      rxbuf[bufcnt] = byteIn;   //checksum
-      if (byteIn == checksum(rxbuf, rxbuf[1] + MESG_HEADER_SIZE)) { //if checksum is correct, packet is received successfully
-        memcpy(packet, rxbuf, rxbuf[1] + 4);
-        //printArray(rxbuf, rxbuf[1] + 4);
-        return true;
-      } else {
-        return false;
-      }
+
     }
-
-
   }
   return false;
 }
@@ -318,7 +321,7 @@ void readPacket(ANT_packet* packet) {
           break;
         case 0x01: //calibration response
           updateCalibration(&(packet->data[1]));
-//          printPacket(packet);
+          //          printPacket(packet);
           break;
         default:
           Serial.println("Other data page (not handled)");
@@ -412,10 +415,10 @@ void loop() {
     //printPacket(ant_packet);
     readPacket(ant_packet);
   }
-    while(Serial.available()){
-      Serial.read();
-      requestCalibration(&powerChannel);
-    }
+  while (Serial.available()) {
+    Serial.read();
+    requestCalibration(&powerChannel);
+  }
 
 
 
