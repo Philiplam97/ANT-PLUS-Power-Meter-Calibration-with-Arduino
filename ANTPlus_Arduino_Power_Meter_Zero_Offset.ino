@@ -141,7 +141,7 @@ void ANT_setChannelID(ANT_channel* channel) {
   message[2] = 0x51; //msgID
   message[3] = channel->channelNumber;
   message[4] = channel->deviceNumber & 0x00FF; //LSB
-  message[5] = channel->deviceNumber & 0xFF00; //MSB
+  message[5] = (channel->deviceNumber & 0xFF00) >> 8; //MSB
   message[6] = channel->deviceType;
   message[7] = channel->transmissionType;
   message[8] = checksum(message, 8);
@@ -156,7 +156,7 @@ void ANT_setChannelPeriod(ANT_channel* channel) {
   message[2] = 0x43; //msgID
   message[3] = channel->channelNumber;
   message[4] = channel->channelPeriod & 0x00FF; //LSB
-  message[5] = channel->channelPeriod & 0xFF00; //MSB
+  message[5] = (channel->channelPeriod & 0xFF00) >> 8; //MSB
   message[6] = checksum(message, 6);
   ANT_send(message, 7);
 }
@@ -229,6 +229,8 @@ void establishChannel(ANT_channel* channel) {
   delay(1000);
   ANT_SetChannelRFFreq(channel);
   delay(1000);
+  ANT_setChannelPeriod(channel);
+  delay(1000);
   ANT_SetChannelSearchTimeout(channel);
   delay(1000);
   ANT_openChannel(channel);
@@ -269,7 +271,7 @@ void updateCalibration(byte* data) {
 boolean constructPacket(ANT_packet* packet) {
   byte rxbuf[ANT_MAX_SIZE];
   int bufcnt = 0;
-  unsigned long timeout = millis() + 3000; //arbitrary timeout value
+  unsigned long timeout = millis() + 200; //arbitrary timeout value for now
   while (timeout > millis()) {
     if (ANT_serial.available()) {
       byte byteIn = ANT_serial.read();
